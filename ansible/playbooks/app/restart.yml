@@ -1,0 +1,19 @@
+---
+- hosts: app
+  become: yes
+  tasks:
+    - name: restart app.service systemd unit
+      systemd:
+        name: app.service
+        state: restarted
+
+    - name: restart app.conf supervisor program
+      supervisorctl:
+        name: app
+        state: restarted
+
+    - name: restart app docker container
+      docker_container:
+        name: app
+        state: started
+        restart: yes

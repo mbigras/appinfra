@@ -1,0 +1,18 @@
+---
+- hosts: app
+  become: yes
+  tasks:
+    - name: start app.service systemd unit
+      systemd:
+        name: app.service
+        state: started
+
+    - name: start app.conf supervisor program
+      supervisorctl:
+        name: app
+        state: started
+
+    - name: start app docker container
+      docker_container:
+        name: app
+        state: started

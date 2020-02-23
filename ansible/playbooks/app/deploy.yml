@@ -1,0 +1,181 @@
+---
+- hosts: app
+  become: yes
+  vars:
+    release: latest
+    config: latest
+    # Variables passed at the command line will take precendence over
+    # the hostvars set with the set_fact module so use the
+    # extra_* convention.
+    #
+    # For more details refer to:
+    # https://stackoverflow.com/questions/27038553/ansible-set-fact-doesnt-change-the-variable-value
+    #
+    # The extra_* variables will get used later by Rundeck.
+    extra_release: ''
+    extra_config: ''
+  tasks:
+    - name: create installation diretory
+      file:
+        path: /opt/app
+        state: directory
+        owner: root
+        group: root
+        mode: 0755
+
+    - name: discover latest release
+      uri:
+        url: https://api.github.com/repos/mbigras/app/releases
+      register: releases
+      when: release == 'latest' or extra_release == 'latest'
+
+    - name: set release to latest release
+      set_fact:
+        release: '{{ releases.json[0].name }}'
+      when: release == 'latest' or extra_release == 'latest'
+
+    - name: print release
+      debug:
+        msg: Deploying release {{ release }}
+
+    - name: get release
+      get_url:
+        dest: /opt/app
+        url: https://github.com/mbigras/app/releases/download/{{ release }}/app_{{ release }}_linux_amd64.tar.gz
+    
+    - name: unarchive release
+      unarchive:
+        src: /opt/app/app_{{ release }}_linux_amd64.tar.gz
+        dest: /opt/app/
+        remote_src: yes
+
+    - name: link to current release
+      file:
+        src: /opt/app/app_{{ release }}_linux_amd64
+        path: /opt/app/current
+        state: link
+
+    - name: discover latest commit
+      uri:
+        url: https://api.github.com/repos/mbigras/app/commits
+      register: repo
+      when: config == 'latest' or extra_config == 'latest'
+
+    - name: set config to latest sha
+      set_fact:
+        config: '{{ repo.json[0].sha }}'
+      when: config == 'latest' or extra_config == 'latest'
+
+    - name: print config sha
+      debug:
+        msg: Using config at {{ config }}
+
+    - name: get app systemd config
+      get_url:
+        url: https://raw.githubusercontent.com/mbigras/app/{{ config }}/config/systemd.toml
+        dest: /opt/app/systemd.toml
+        owner: root
+        group: root
+        mode: 0644
+      notify: restart app systemd
+
+    - name: create app.service systemd unit
+      copy:
+        dest: /etc/systemd/system/app.service
+        owner: root
+        group: root
+        mode: 0644
+        content: |
+          [Service]
+          ExecStart=/opt/app/current/app -config /opt/app/systemd.toml
+          SyslogIdentifier=app
+          Restart=on-failure
+          [Install]
+          WantedBy=multi-user.target
+      notify:
+        - reload systemd
+        - restart app systemd
+
+    - name: start and enable app.service systemd unit
+      systemd:
+        name: app.service
+        state: started
+        enabled: yes
+        daemon_reload: yes
+
+    - name: get app supervisor config
+      get_url:
+        url: https://raw.githubusercontent.com/mbigras/app/{{ config }}/config/supervisor.toml
+        dest: /opt/app/supervisor.toml
+        owner: root
+        group: root
+        mode: 0644
+      notify: restart app supervisor
+
+    - name: create app.conf supervisor program
+      copy:
+        dest: /etc/supervisor/conf.d/app.conf
+        owner: root
+        group: root
+        mode: 0644
+        content: |
+          [program:app]
+          command=/opt/app/current/app -config /opt/app/supervisor.toml
+          autostart=true
+          autorestart=true
+          redirect_stderr=true
+          stdout_logfile=/var/log/app.log
+      notify: restart app supervisor
+
+    - name: reread supervisor programs
+      supervisorctl:
+        name: app
+        state: present
+
+    - name: start app.conf supervisor program
+      supervisorctl:
+        name: app
+        state: started
+
+    - name: get app docker config
+      get_url:
+        url: https://raw.githubusercontent.com/mbigras/app/{{ config }}/config/docker.toml
+        dest: /opt/app/docker.toml
+        owner: root
+        group: root
+        mode: 0644
+      notify: restart app docker
+
+    - name: create app docker container
+      docker_container:
+        name: app
+        image: mbigras/app:{{ release[1:] }}
+        command: -config /app/docker.toml
+        state: started
+        restart_policy: always
+        network_mode: host
+        volumes:
+          - /opt/app/docker.toml:/app/docker.toml
+        comparisons:
+          '*': strict
+
+  handlers:
+    - name: reload systemd
+      systemd:
+        daemon_reload: yes
+
+    - name: restart app systemd
+      systemd:
+        name: app.service
+        state: restarted
+    
+    - name: restart app supervisor
+      supervisorctl:
+        name: app
+        state: restarted
+
+    - name: restart app docker
+      docker_container:
+        name: app
+        state: started
+        restart: yes

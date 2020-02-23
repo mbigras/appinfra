@@ -1,0 +1,25 @@
+---
+- hosts: all
+  become: yes
+  tasks:
+    - name: create /etc/hosts file
+      copy:
+        dest: /etc/hosts
+        owner: root
+        group: root
+        mode: 0644
+        content: |
+          127.0.0.1 localhost {{ inventory_hostname_short }}
+
+          # The following lines are desirable for IPv6 capable hosts
+          ::1     localhost ip6-localhost ip6-loopback
+          ff02::1 ip6-allnodes
+          ff02::2 ip6-allrouters
+
+          {% if env == 'vagrant' %}
+          {% for host in groups[site] %}
+          {{ hostvars[host]['ansible_host'] }} {{ host }} {{ hostvars[host]['aliases'] | default([]) | join(" ") }}
+          {% endfor %}
+          {% else %}
+          # todo: figure out what to do for env == 'production'
+          {% endif %}

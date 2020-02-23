@@ -1,0 +1,358 @@
+---
+- hosts: mag
+  become: yes
+  vars:
+    rundeck_host: rundeck.{{ site }}.{{ region }}.egfast.com
+    rundeck_port: 4440
+    rundeck_slack_webhook_token: '' # -e rundeck_slack_webhook_token=$(lpass show --note rundeck_slack_webhook_token)
+    rundeck_git_branch: master
+  tasks:
+    - name: obliterate rundeck directory
+      file:
+        path: /opt/rundeck
+        state: absent
+
+    - name: make rundeck installation directories
+      file:
+        path: '{{ item }}'
+        state: directory
+        owner: root
+        group: root
+        mode: 0755
+      with_items:
+        - /opt/rundeck
+        - /opt/rundeck/keys
+        - /opt/rundeck/projects
+        - /opt/rundeck/libext
+
+    - name: get vagrant private key
+      uri:
+        url: https://raw.githubusercontent.com/hashicorp/vagrant/master/keys/vagrant
+        return_content: yes
+      register: vagrant_private
+      when: env == 'vagrant'
+
+    - name: set vagrant private key as fact
+      set_fact:
+        rundeck_private_key: '{{ vagrant_private.content }}'
+      when: env == 'vagrant'
+    
+    # todo: handle production private key
+
+    - name: create rundeck private_key
+      copy:
+        content: '{{ rundeck_private_key }}'
+        dest: /opt/rundeck/keys/private_key
+        owner: root
+        group: root
+        mode: 0400
+
+    - name: clone appinfra git repository
+      git:
+        repo: https://github.com/mbigras/appinfra
+        dest: /opt/rundeck/appinfra
+        version: '{{ rundeck_git_branch }}'
+        force: yes
+
+    - name: hack vagrant inventory
+      lineinfile:
+        path: /opt/rundeck/appinfra/ansible/vagrant.yml
+        regexp: '^    ansible_private_key_file:'
+        state: absent
+      when: env == 'vagrant'
+    
+    - name: create rundeck ansible.cfg
+      copy:
+        dest: /opt/rundeck/appinfra/ansible/ansible.cfg
+        owner: root
+        group: root
+        mode: 0644
+        content: |
+          [defaults]
+          remote_user={{ rundeck_user }}
+          private_key_file=/home/rundeck/keys/private_key
+          inventory=/home/rundeck/ansible/{{ env }}.yml
+          roles_path=/home/rundeck/ansible/roles
+          stdout_callback=yaml
+          [ssh_connection]
+          pipelining = True
+
+    - name: create rundeck app project directory
+      file:
+        path: /opt/rundeck/projects/app/etc
+        state: directory
+        owner: root
+        group: root
+        mode: 0755
+
+    - name: create rundeck project configuration
+      copy:
+        dest: /opt/rundeck/projects/app/etc/project.properties
+        owner: root
+        group: root
+        mode: 0644
+        content: |
+          project.description=Rundeck at {{ site[0]|upper}}{{site[1:] }} in {{ region[0]|upper}}{{region[1:] }}
+          resources.source.1.config.ansible-limit=app:&{{ site }}
+          project.name=app
+          project.ansible-config-file-path=/home/rundeck/ansible/ansible.cfg
+          resources.source.1.config.ansible-config-file-path=/home/rundeck/ansible/ansible.cfg
+          project.ansible-executable=/bin/bash
+          project.disable.executions=false
+          project.disable.schedule=false
+          project.jobs.gui.groupExpandLevel=1
+          project.nodeCache.delay=30
+          project.nodeCache.enabled=true
+          project.nodeCache.firstLoadSynch=true
+          resources.source.1.config.ansible-become=false
+          resources.source.1.config.ansible-disable-limit=false
+          resources.source.1.config.ansible-gather-facts=true
+          resources.source.1.config.ansible-ignore-errors=true
+          resources.source.1.type=com.batix.rundeck.plugins.AnsibleResourceModelSourceFactory
+          service.FileCopier.default.provider=com.batix.rundeck.plugins.AnsibleFileCopier
+          service.NodeExecutor.default.provider=com.batix.rundeck.plugins.AnsibleNodeExecutor
+
+    - name: download slack plugin
+      get_url:
+        url: https://github.com/rundeck-plugins/slack-incoming-webhook-plugin/releases/download/v1.2.5/slack-incoming-webhook-plugin-1.2.5.jar
+        dest: /opt/rundeck/libext/slack-incoming-webhook-plugin-1.2.5.jar
+
+    - name: recreate rundeck container
+      docker_container:
+        name: rundeck
+        image: mbigras/rundeck:3.0.2
+        recreate: yes
+        state: started
+        restart_policy: always
+        network_mode: host
+        env:
+          RUNDECK_GRAILS_URL: http://{{ rundeck_host }}:{{ rundeck_port }}
+          ANSIBLE_HOST_KEY_CHECKING: 'False'
+        volumes:
+          # todo: handle rundeck password
+          - /opt/rundeck/appinfra/ansible:/home/rundeck/ansible
+          - /opt/rundeck/keys:/home/rundeck/keys
+          - /opt/rundeck/projects:/home/rundeck/projects
+          - /opt/rundeck/libext/slack-incoming-webhook-plugin-1.2.5.jar:/home/rundeck/libext/slack-incoming-webhook-plugin-1.2.5.jar
+        comparisons:
+          '*': strict
+
+    - name: create a directory app jobs
+      file:
+        path: /opt/rundeck/projects/app/jobs
+        state: directory
+        owner: root
+        group: root
+        recurse: yes
+
+    - name: create app jobs.yml
+      copy:
+        dest: /opt/rundeck/projects/app/jobs/jobs.yml
+        owner: root
+        group: root
+        mode: 0644
+        content: |
+          # deploy job
+          - name: deploy
+            description: ''
+            notification:
+              onfailure:
+                plugin:
+                  configuration:
+                    slack_channel: '#writing-code'
+                    webhook_base_url: https://hooks.slack.com/services
+                    webhook_token: {{ rundeck_slack_webhook_token }}
+                  type: SlackNotification
+              onsuccess:
+                plugin:
+                  configuration:
+                    slack_channel: '#writing-code'
+                    webhook_base_url: https://hooks.slack.com/services
+                    webhook_token: {{ rundeck_slack_webhook_token }}
+                  type: SlackNotification
+            defaultTab: summary
+            executionEnabled: true
+            loglevel: INFO
+            nodeFilterEditable: false
+            nodefilters:
+              dispatch:
+                excludePrecedence: true
+                keepgoing: false
+                rankOrder: ascending
+                successOnEmptyNodeFilter: false
+                threadcount: '10'
+              filter: .*
+            nodesSelectedByDefault: true
+            options:
+            - description: Commit for config
+              label: config
+              name: config
+              regex: ^([a-z0-9]+|latest)$
+              value: latest
+              required: true
+            - description: App release
+              label: release
+              name: release
+              regex: ^(v[0-9]+\.[0-9]+\.[0-9]+|latest)$
+              value: latest
+              required: true
+            scheduleEnabled: true
+            sequence:
+              commands:
+              - configuration:
+                  ansible-playbook: playbooks/app/deploy.yml
+                  ansible-base-dir-path: /home/rundeck/ansible
+                  # Variables passed at the command line will take precendence over
+                  # the hostvars set with the set_fact module so use the
+                  # extra_* convention.
+                  #
+                  # For more details refer to:
+                  # https://stackoverflow.com/questions/27038553/ansible-set-fact-doesnt-change-the-variable-value
+                  #
+                  # The extra_* variables will get used later by Rundeck.
+                  #
+                  # Like right here:
+                  ansible-extra-param: --extra-vars "extra_config=${option.config}" --extra-vars "extra_release=${option.release}"
+                nodeStep: false
+                type: com.batix.rundeck.plugins.AnsiblePlaybookWorkflowStep
+              keepgoing: false
+              strategy: node-first
+          # start job
+          - name: start
+            description: ''
+            defaultTab: summary
+            executionEnabled: true
+            loglevel: INFO
+            nodeFilterEditable: false
+            nodefilters:
+              dispatch:
+                excludePrecedence: true
+                keepgoing: false
+                rankOrder: ascending
+                successOnEmptyNodeFilter: false
+                threadcount: '10'
+              filter: .*
+            nodesSelectedByDefault: true
+            options: []
+            scheduleEnabled: true
+            sequence:
+              commands:
+              - configuration:
+                  ansible-playbook: playbooks/app/start.yml
+                  ansible-base-dir-path: /home/rundeck/ansible
+                nodeStep: false
+                type: com.batix.rundeck.plugins.AnsiblePlaybookWorkflowStep
+              keepgoing: false
+              strategy: node-first
+          # live stop
+          - name: stop
+            description: ''
+            defaultTab: summary
+            executionEnabled: true
+            loglevel: INFO
+            nodeFilterEditable: false
+            nodefilters:
+              dispatch:
+                excludePrecedence: true
+                keepgoing: false
+                rankOrder: ascending
+                successOnEmptyNodeFilter: false
+                threadcount: '10'
+              filter: .*
+            nodesSelectedByDefault: true
+            options: []
+            scheduleEnabled: true
+            sequence:
+              commands:
+              - configuration:
+                  ansible-playbook: playbooks/app/stop.yml
+                  ansible-base-dir-path: /home/rundeck/ansible
+                nodeStep: false
+                type: com.batix.rundeck.plugins.AnsiblePlaybookWorkflowStep
+              keepgoing: false
+              strategy: node-first
+          # live restart
+          - name: restart
+            description: ''
+            notification:
+              onfailure:
+                plugin:
+                  configuration:
+                    slack_channel: '#writing-code'
+                    webhook_base_url: https://hooks.slack.com/services
+                    webhook_token: {{ rundeck_slack_webhook_token }}
+                  type: SlackNotification
+              onsuccess:
+                plugin:
+                  configuration:
+                    slack_channel: '#writing-code'
+                    webhook_base_url: https://hooks.slack.com/services
+                    webhook_token: {{ rundeck_slack_webhook_token }}
+                  type: SlackNotification
+            defaultTab: summary
+            executionEnabled: true
+            loglevel: INFO
+            nodeFilterEditable: false
+            nodefilters:
+              dispatch:
+                excludePrecedence: true
+                keepgoing: false
+                rankOrder: ascending
+                successOnEmptyNodeFilter: false
+                threadcount: '10'
+              filter: .*
+            nodesSelectedByDefault: true
+            options: []
+            scheduleEnabled: true
+            sequence:
+              commands:
+              - configuration:
+                  ansible-playbook: playbooks/app/restart.yml
+                  ansible-base-dir-path: /home/rundeck/ansible
+                nodeStep: false
+                type: com.batix.rundeck.plugins.AnsiblePlaybookWorkflowStep
+              keepgoing: false
+              strategy: node-first
+
+    - name: pull rundeck cli image
+      docker_image:
+        name: thofer/rundeck-cli:1.1.0
+        source: pull
+
+    - name: wait for rundeck to come online
+      wait_for:
+        port: '{{ rundeck_port }}'
+
+    - name: import app jobs.yml
+      docker_container:
+        name: rundeck_cli_import_jobs
+        image: thofer/rundeck-cli:1.1.0
+        network_mode: host
+        entrypoint: /usr/bin/rd
+        command: >
+          jobs
+          load
+          --project app
+          --format yaml
+          --file jobs.yml
+        state: started
+        detach: no
+        env:
+          RD_URL: 'http://{{ rundeck_host }}:{{ rundeck_port }}'
+          RD_USER: 'admin'
+          RD_PASSWORD: 'admin'
+        volumes:
+          - /opt/rundeck/projects/app/jobs/jobs.yml:/opt/rundeck/projects/app/jobs/jobs.yml
+        working_dir: /opt/rundeck/projects/app/jobs/
+      ignore_errors: yes
+      register: import_jobs
+
+    - name: fail if importing jobs failed
+      fail:
+        msg: |
+          Ansible failed to import Rundeck jobs.
+
+          To recreate the error, connect to the target machine and run this command:
+
+          sudo docker start --attach rundeck_cli_import_jobs
+      when: import_jobs.failed is defined and import_jobs.failed

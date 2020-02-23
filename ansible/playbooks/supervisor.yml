@@ -1,0 +1,14 @@
+---
+- hosts: all
+  become: yes
+  tasks:
+    - name: install supervisor
+      apt:
+        name: supervisor
+        force_apt_get: yes
+
+    - name: start and enable supervisor.service
+      systemd:
+        name: supervisor.service
+        state: started
+        enabled: yes
