@@ -4,7 +4,6 @@
   vars:
     rundeck_host: rundeck.{{ site }}.{{ region }}.egfast.com
     rundeck_port: 4440
-    rundeck_slack_webhook_token: '' # -e rundeck_slack_webhook_token=$(lpass show --note rundeck_slack_webhook_token)
     rundeck_git_branch: master
   tasks:
     - name: obliterate rundeck directory
@@ -92,9 +91,10 @@
         group: root
         mode: 0644
         content: |
-          project.description=Rundeck at {{ site[0]|upper}}{{site[1:] }} in {{ region[0]|upper}}{{region[1:] }}
-          resources.source.1.config.ansible-limit=app:&{{ site }}
           project.name=app
+          project.label=App Project at {{ site[0]|upper}}{{site[1:] }} in {{ region[0]|upper}}{{region[1:] }}
+          project.description=App Project at {{ site[0]|upper}}{{site[1:] }} in {{ region[0]|upper}}{{region[1:] }}
+          resources.source.1.config.ansible-limit=app:&{{ site }}
           project.ansible-config-file-path=/home/rundeck/ansible/ansible.cfg
           resources.source.1.config.ansible-config-file-path=/home/rundeck/ansible/ansible.cfg
           project.ansible-executable=/bin/bash
@@ -120,14 +120,18 @@
     - name: recreate rundeck container
       docker_container:
         name: rundeck
-        image: mbigras/rundeck:3.0.2
+        image: batix/rundeck-ansible:3.1.1
         recreate: yes
         state: started
         restart_policy: always
         network_mode: host
+        user: root
         env:
           RUNDECK_GRAILS_URL: http://{{ rundeck_host }}:{{ rundeck_port }}
           ANSIBLE_HOST_KEY_CHECKING: 'False'
+          RUNDECK_SERVER_ADDRESS: '0.0.0.0'
+        command:
+          - -Djava.net.preferIPv4Stack=true
         volumes:
           # todo: handle rundeck password
           - /opt/rundeck/appinfra/ansible:/home/rundeck/ansible
@@ -136,6 +140,9 @@
           - /opt/rundeck/libext/slack-incoming-webhook-plugin-1.2.5.jar:/home/rundeck/libext/slack-incoming-webhook-plugin-1.2.5.jar
         comparisons:
           '*': strict
+
+    - name: upgrade ansible
+      shell: docker exec rundeck pip3 install ansible==2.9.0
 
     - name: create a directory app jobs
       file:
@@ -159,16 +166,16 @@
               onfailure:
                 plugin:
                   configuration:
-                    slack_channel: '#writing-code'
+                    slack_channel: '{{ slack_channel }}'
                     webhook_base_url: https://hooks.slack.com/services
-                    webhook_token: {{ rundeck_slack_webhook_token }}
+                    webhook_token: {{ slack_webhook_token }}
                   type: SlackNotification
               onsuccess:
                 plugin:
                   configuration:
-                    slack_channel: '#writing-code'
+                    slack_channel: '{{ slack_channel }}'
                     webhook_base_url: https://hooks.slack.com/services
-                    webhook_token: {{ rundeck_slack_webhook_token }}
+                    webhook_token: {{ slack_webhook_token }}
                   type: SlackNotification
             defaultTab: summary
             executionEnabled: true
@@ -220,6 +227,21 @@
           # start job
           - name: start
             description: ''
+            notification:
+              onfailure:
+                plugin:
+                  configuration:
+                    slack_channel: '{{ slack_channel }}'
+                    webhook_base_url: https://hooks.slack.com/services
+                    webhook_token: {{ slack_webhook_token }}
+                  type: SlackNotification
+              onsuccess:
+                plugin:
+                  configuration:
+                    slack_channel: '{{ slack_channel }}'
+                    webhook_base_url: https://hooks.slack.com/services
+                    webhook_token: {{ slack_webhook_token }}
+                  type: SlackNotification
             defaultTab: summary
             executionEnabled: true
             loglevel: INFO
@@ -247,6 +269,21 @@
           # live stop
           - name: stop
             description: ''
+            notification:
+              onfailure:
+                plugin:
+                  configuration:
+                    slack_channel: '{{ slack_channel }}'
+                    webhook_base_url: https://hooks.slack.com/services
+                    webhook_token: {{ slack_webhook_token }}
+                  type: SlackNotification
+              onsuccess:
+                plugin:
+                  configuration:
+                    slack_channel: '{{ slack_channel }}'
+                    webhook_base_url: https://hooks.slack.com/services
+                    webhook_token: {{ slack_webhook_token }}
+                  type: SlackNotification
             defaultTab: summary
             executionEnabled: true
             loglevel: INFO
@@ -278,16 +315,16 @@
               onfailure:
                 plugin:
                   configuration:
-                    slack_channel: '#writing-code'
+                    slack_channel: '{{ slack_channel }}'
                     webhook_base_url: https://hooks.slack.com/services
-                    webhook_token: {{ rundeck_slack_webhook_token }}
+                    webhook_token: {{ slack_webhook_token }}
                   type: SlackNotification
               onsuccess:
                 plugin:
                   configuration:
-                    slack_channel: '#writing-code'
+                    slack_channel: '{{ slack_channel }}'
                     webhook_base_url: https://hooks.slack.com/services
-                    webhook_token: {{ rundeck_slack_webhook_token }}
+                    webhook_token: {{ slack_webhook_token }}
                   type: SlackNotification
             defaultTab: summary
             executionEnabled: true

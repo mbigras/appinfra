@@ -11,6 +11,9 @@ vagrant:
     mag1.site1.region1.egfast.com:
       ansible_host: 192.168.42.100
       aliases:
+        - prometheus.site1.region1.egfast.com
+        - alertmanager.site1.region1.egfast.com
+        - log.site1.region1.egfast.com
         - rundeck.site1.region1.egfast.com
     app1.site1.region1.egfast.com:
       ansible_host: 192.168.42.101

@@ -1,0 +1,55 @@
+---
+- name: configure log server
+  hosts: mag
+  become: yes
+  tasks:
+    - name: configure rsyslog to receive log messages
+      copy:
+        dest: /etc/rsyslog.d/10-input.conf
+        owner: root
+        group: root
+        mode: 0644
+        content: |
+          module(load="imtcp")
+          input(type="imtcp" port="514")
+
+          # template (name="remotesyslog" type="string" string="/var/log/remote/%HOSTNAME%/syslog")
+          # template (name="egfast" type="string" string="/var/log/remote/%HOSTNAME%/%PROGRAMNAME%.log")
+          if ($hostname != "{{ inventory_hostname_short }}") then {
+            if ($programname startswith "egfast") then {
+              # action(type="omfile" dynafile="egfast")
+              action(type="omfile" file="/var/log/egfast.log")
+            } else {
+              # action(type="omfile" dynafile="remotesyslog")
+              action(type="omfile" file="/var/log/syslogremote")
+            }
+            stop
+          }
+      notify: restart rsyslog
+
+    # todo: rotate logs with logrotate
+  handlers:
+    - name: restart rsyslog
+      systemd:
+        name: rsyslog.service
+        state: restarted
+
+
+- name: configure app servers to write logs 
+  hosts: app
+  become: yes
+  tasks:
+    - name: configure app servers to write logs to log server
+      copy:
+        dest: /etc/rsyslog.d/60-forward.conf
+        owner: root
+        group: root
+        mode: 0644
+        content: |
+          action(type="omfwd" target="log.site1.region1.egfast.com" port="514" protocol="tcp")
+      notify: restart rsyslog
+  handlers:
+    - name: restart rsyslog
+      systemd:
+        name: rsyslog.service
+        state: restarted

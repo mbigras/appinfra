@@ -1,0 +1,78 @@
+---
+- hosts: mag
+  become: yes
+  tasks:
+    - name: create installation directory
+      file:
+        path: /opt/alertmanager
+        state: directory
+        owner: root
+        group: root
+        mode: 0755
+
+    # todo: set up a different bot besides RundeckBot
+    - name: create alertmanager configuration
+      copy:
+        dest: /opt/alertmanager/alertmanager.yml
+        owner: root
+        group: root
+        mode: 0644
+        content: |
+          ---
+          global:
+            resolve_timeout: 5m
+            slack_api_url: https://hooks.slack.com/services/{{ slack_webhook_token }}
+
+          # todo: add inhibit rules for maintenance mode
+          inhibit_rules: []
+
+          route:
+            group_wait: 30s
+            group_interval: 5m
+            repeat_interval: 12h
+            receiver: slack
+            routes:
+              # - receiver: blackhole
+              #   match:
+              #     alertname: MaintenanceMode
+              - receiver: slack
+                group_by:
+                  - alertname
+                  - severity
+                match:
+                  severity: critical
+
+          receivers:
+          # the blackhole receiver goes nowhere and is used to inhibit other alerts
+          # when maintenance mode is on
+          # - name: blackhole
+            - name: slack
+              slack_configs:
+              - send_resolved: true
+                text: {% raw %}|-
+                  {{ range .Alerts }}
+                     *Alert:* {{ .Annotations.summary }} - `{{ .Labels.severity }}`
+                    *Description:* {{ .Annotations.description }}
+                    *Details:*
+                    {{ range .Labels.SortedPairs }} • *{{ .Name }}:* `{{ .Value }}`
+                    {{ end }}
+                  {{ end }}{% endraw %}
+      notify: restart alertmanager
+
+    - name: create alertmanager container
+      docker_container:
+        name: alertmanager
+        image: prom/alertmanager:v0.16.0
+        state: started
+        restart_policy: always
+        network_mode: host
+        volumes:
+          - /opt/alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml
+        comparisons:
+          '*': strict
+  handlers:
+    - name: restart alertmanager
+      docker_container:
+        name: alertmanager
+        state: started
+        restart: yes

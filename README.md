@@ -1,6 +1,6 @@
 # appinfra
 
-> Web application infrastructure for demos
+> Learning about infrastructure
 
 ## Features
 

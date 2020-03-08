@@ -1,0 +1,18 @@
+---
+- hosts: all
+  become: yes
+  tasks:
+    - name: create cadvisor container
+      docker_container:
+        name: cadvisor
+        image: google/cadvisor:v0.33.0
+        state: started
+        restart_policy: always
+        network_mode: host
+        volumes:
+          - /:/rootfs:ro
+          - /var/run:/var/run:rw
+          - /sys:/sys:ro
+          - /var/lib/docker/:/var/lib/docker:ro
+        comparisons:
+          '*': strict

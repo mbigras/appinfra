@@ -1,0 +1,51 @@
+---
+- hosts: mag
+  become: yes
+  tasks:
+    - name: create blackbox_exporter installation directory
+      file:
+        path: /opt/blackbox_exporter
+        state: directory
+        owner: root
+        group: root
+        mode: 0755
+
+    - name: create blackbox.yml configuration
+      copy:
+        dest: /opt/blackbox_exporter/blackbox.yml
+        owner: root
+        group: root
+        mode: 0644
+        content: |
+          ---
+          modules:
+            icmp_ipv4:
+              prober: icmp
+              timeout: 1m
+              icmp:
+                preferred_ip_protocol: ip4
+            http_2xx:
+              prober: http
+              timeout: 1m
+              http:
+                preferred_ip_protocol: ip4
+      notify: restart blackbox_exporter
+
+    - name: create blackbox_exporter container
+      docker_container:
+        name: blackbox_exporter
+        image: prom/blackbox-exporter:v0.16.0
+        state: started
+        restart_policy: always
+        network_mode: host
+        volumes:
+          - /opt/blackbox_exporter/blackbox.yml:/etc/blackbox_exporter/config.yml
+        comparisons:
+          '*': strict
+
+  handlers:
+    - name: restart blackbox_exporter
+      docker_container:
+        name: blackbox_exporter
+        state: started
+        restart: yes

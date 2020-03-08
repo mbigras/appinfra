@@ -1,0 +1,6 @@
+---
+prometheus_host: prometheus.{{ site }}.{{ region }}.egfast.com
+alertmanager_host: alertmanager.{{ site }}.{{ region }}.egfast.com
+# todo: create different variables for different environments
+slack_webhook_token: '' # -e slack_webhook_token=$(lpass show --note slack_webhook_token)
+slack_channel: '#feed-app'

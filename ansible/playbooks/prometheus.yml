@@ -1,0 +1,5 @@
+---
+- hosts: mag
+  become: yes
+  roles:
+    - prometheus

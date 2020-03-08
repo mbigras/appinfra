@@ -88,7 +88,7 @@
         content: |
           [Service]
           ExecStart=/opt/app/current/app -config /opt/app/systemd.toml
-          SyslogIdentifier=app
+          SyslogIdentifier=egfast.app1
           Restart=on-failure
           [Install]
           WantedBy=multi-user.target
@@ -124,7 +124,7 @@
           autostart=true
           autorestart=true
           redirect_stderr=true
-          stdout_logfile=/var/log/app.log
+          stdout_logfile=/var/log/app2.log
       notify: restart app supervisor
 
     - name: reread supervisor programs

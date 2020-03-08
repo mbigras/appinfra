@@ -1,0 +1,41 @@
+---
+- hosts: app
+  become: yes
+  tasks:
+    - name: create foo.service systemd unit
+      copy:
+        dest: /etc/systemd/system/foo.service
+        owner: root
+        group: root
+        mode: 0644
+        content: |
+          [Unit]
+          After=docker.service
+          [Service]
+          SyslogIdentifier=foo
+          ExecStartPre=-/usr/bin/docker kill foo
+          ExecStartPre=-/usr/bin/docker rm foo
+          ExecStartPre=/usr/bin/docker pull alpine
+          ExecStart=/usr/bin/docker run \
+          --name foo\
+           -p 8080:8080 \
+           alpine \
+           /bin/sh -c 'echo starting up!; while true; do sleep 1; done'
+          ExecStop=/usr/bin/docker stop foo
+          Restart=on-failure
+          [Install]
+          WantedBy=multi-user.target
+      notify: restart foo
+
+    - name: start and enable foo
+      systemd:
+        name: foo.service
+        state: started
+        enabled: yes
+        daemon_reload: yes
+  handlers:
+    - name: restart foo
+      systemd:
+        name: foo.service
+        state: restarted
+        daemon_reload: yes

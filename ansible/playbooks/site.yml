@@ -1,6 +1,11 @@
 ---
-- import_playbook: etc_hosts.yml
 - import_playbook: apt.yml
+- import_playbook: ntp.yml
+- import_playbook: etc_hosts.yml
 - import_playbook: supervisor.yml
 - import_playbook: docker.yml
+- import_playbook: node_exporter.yml
+- import_playbook: blackbox_exporter.yml
+- import_playbook: cadvisor.yml
+- import_playbook: prometheus.yml
 - import_playbook: rundeck.yml
