@@ -1,0 +1,12 @@
+---
+- hosts: all
+  become: yes
+  tasks:
+    - name: start the exporter
+      docker_container:
+        name: docker_exporter
+        image: prometheusnet/docker_exporter:2020031403160189d598
+        restart_policy: always
+        network_mode: host
+        volumes:
+          - /var/run/docker.sock:/var/run/docker.sock 

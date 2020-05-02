@@ -25,8 +25,8 @@
 
     - name: link to current release
       file:
-        src: /opt/node_exporter/node_exporter-1.0.0-rc.0.linux-amd64
-        path: /opt/node_exporter/current
+        src: /opt/node_exporter/node_exporter-1.0.0-rc.0.linux-amd64/node_exporter
+        path: /opt/node_exporter/node_exporter
         state: link
       notify: restart node_exporter
 
@@ -38,10 +38,8 @@
         mode: 0644
         content: |
           [Service]
-          ExecStart=/opt/node_exporter/current/node_exporter \
+          ExecStart=/opt/node_exporter/node_exporter \
             --collector.systemd \
-            --collector.supervisord \
-            --collector.supervisord.url=unix:///var/run/supervisor.sock \
             --collector.ntp
           SyslogIdentifier=node_exporter
           Restart=on-failure

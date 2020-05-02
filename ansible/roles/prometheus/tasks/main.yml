@@ -19,98 +19,10 @@
     mode: 0644
   notify: restart prometheus
 
-# these rules don't work because the metrics disappear
-# https://www.robustperception.io/existential-issues-with-metrics
-# - name: create cadvisor rules
-#   copy:
-#     dest: /opt/prometheus/rules/cadvisor.yml
-#     owner: root
-#     group: root
-#     mode: 0644
-#     content: |
-#       ---
-#       groups:
-#         - name: cadvisor
-#           rules:
-#             # why isn't this picking up mag1?
-#             - alert: AppContainerDown
-#               expr: absent(container_memory_usage_bytes{name="app"})
-#               for: 10s
-#               labels:
-#                 severity: "critical"
-#               annotations:
-#                 summary: "summary here app container down"
-#                 description: "description here app container down"
-#   notify: restart prometheus
-
-# with supervisor the metrics do not disappear and are useful
-# https://www.robustperception.io/existential-issues-with-metrics
-# - name: create supervisor rules
-#   copy:
-#     dest: /opt/prometheus/rules/supervisor.yml
-#     owner: root
-#     group: root
-#     mode: 0644
-#     content: |
-#       ---
-#       groups:
-#         - name: supervisor
-#           rules:
-#             - alert: AppSuperviorProgramDown
-#               # // STOPPED  = 0
-#               # STARTING = 10
-#               # RUNNING  = 20
-#               # // BACKOFF  = 30
-#               # STOPPING = 40
-#               # // EXITED   = 100
-#               # // FATAL    = 200
-#               # // UNKNOWN  = 1000
-#               expr: node_supervisord_state{name="app"} != 20
-#               for: 10s
-#               labels:
-#                 severity: "critical"
-#               annotations:
-#                 summary: "summary here app supervisor program down"
-#                 description: "description here app supervisor program down"
-#   notify: restart prometheus
-
-# these rules don't work because the metrics disappear
-# https://www.robustperception.io/existential-issues-with-metrics
-# - name: create systemd rules
-#   copy:
-#     dest: /opt/prometheus/rules/systemd.yml
-#     owner: root
-#     group: root
-#     mode: 0644
-#     content: |
-#       ---
-#       groups:
-#         - name: systemd
-#           rules:
-#             - alert: AppSystemdUnitDown
-#               # same here why isn't this picking up mag1?
-#               expr: node_systemd_unit_state{name="app.service", state="active"} == 0
-#               for: 10s
-#               labels:
-#                 severity: "critical"
-#               annotations:
-#                 summary: "summary here app.service systemd unit down"
-#                 description: "description here app.service systemd unit down"
-#   notify: restart prometheus
-
-- name: create rule to check if machines are up
+- name: create docker alerting rules
   template:
-    src: rules_node.yml.j2
-    dest: /opt/prometheus/rules/node.yml
-    owner: root
-    group: root
-    mode: 0644
-  notify: restart prometheus
-
-- name: create blackbox rule to check if machines are up
-  template:
-    src: rules_blackbox.yml.j2
-    dest: /opt/prometheus/rules/blackbox.yml
+    src: rules_docker.yml.j2
+    dest: /opt/prometheus/rules/rules_docker.yml
     owner: root
     group: root
     mode: 0644
@@ -128,5 +40,3 @@
       - /opt/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
       - /opt/prometheus/rules:/etc/prometheus/rules
       - /opt/prometheus/data:/prometheus
-    comparisons:
-      '*': strict

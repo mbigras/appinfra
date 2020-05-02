@@ -1,0 +1,12 @@
+---
+groups:
+  - name: docker
+    rules:
+      - alert: DockerContainerDown
+        expr: docker_container_running_state == 0
+        for: 10s
+        labels:
+          severity: "critical"
+        annotations:
+          summary: "{{ "{{" }} $labels.name {{ "}}" }} is down on {{ "{{" }} $labels.instance {{ "}}" }}"
+          description: ""

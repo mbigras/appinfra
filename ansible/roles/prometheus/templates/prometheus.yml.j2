@@ -1,13 +1,16 @@
 ---
 global:
   scrape_interval: 15s
+
 rule_files:
   - 'rules/*.yml'
+
 alerting:
   alertmanagers:
     - static_configs:
       - targets:
           - {{ alertmanager_host }}:9093
+
 scrape_configs:
   - job_name: 'prometheus'
     static_configs:
@@ -21,68 +24,9 @@ scrape_configs:
           - {{ hostvars[host]['inventory_hostname'] }}:9100
 {% endfor %}
 
-#   - job_name: 'cadvisor'
-#     static_configs:
-#       - targets:
-# {% for host in groups[site] %}
-#           - {{ hostvars[host]['inventory_hostname'] }}:8080
-# {% endfor %}
-
-  - job_name: 'mag_icmp'
-    metrics_path: /probe
-    params:
-      module: [icmp_ipv4]
+  - job_name: 'docker'
     static_configs:
       - targets:
 {% for host in groups[site] %}
-{% if host in groups["mag"] %}
-          - {{ hostvars[host]['inventory_hostname'] }}
-{% endif %}
+          - {{ hostvars[host]['inventory_hostname'] }}:9417
 {% endfor %}
-    relabel_configs:
-      - source_labels: [__address__] # one of the targets
-        target_label: __param_target # puts __address__ in param of query to blackbox
-      - source_labels: [__param_target]
-        target_label: instance # puts the instance label in the prometheus metric
-      - target_label: __address__
-        replacement: 127.0.0.1:9115 # sends query to blackbox exporter at the end
-
-  - job_name: 'app_icmp'
-    metrics_path: /probe
-    params:
-      module: [icmp_ipv4]
-    static_configs:
-      - targets:
-{% for host in groups[site] %}
-{% if host in groups["app"] %}
-          - {{ hostvars[host]['inventory_hostname'] }}
-{% endif %}
-{% endfor %}
-    relabel_configs:
-      - source_labels: [__address__] # one of the targets
-        target_label: __param_target # puts __address__ in param of query to blackbox
-      - source_labels: [__param_target]
-        target_label: instance # puts the instance label in the prometheus metric
-      - target_label: __address__
-        replacement: 127.0.0.1:9115 # sends query to blackbox exporter at the end
-
-  - job_name: 'app_http'
-    metrics_path: /probe
-    params:
-      module: [http_2xx]
-    static_configs:
-      - targets:
-{% for host in groups[site] %}
-{% if host in groups["app"] %}
-          - {{ hostvars[host]['inventory_hostname'] }}:9001/
-          - {{ hostvars[host]['inventory_hostname'] }}:9002/
-          - {{ hostvars[host]['inventory_hostname'] }}:9003/
-{% endif %}
-{% endfor %}
-    relabel_configs:
-      - source_labels: [__address__] # one of the targets
-        target_label: __param_target # puts __address__ in param of query to blackbox
-      - source_labels: [__param_target]
-        target_label: instance # puts the instance label in the prometheus metric
-      - target_label: __address__
-        replacement: 127.0.0.1:9115 # sends query to blackbox exporter at the end
